@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	testRepo      string = filepath.Clean("../../testdata/test_repo")
+	testRepo      string = filepath.Clean("./testdata/test_repo")
 	testLogRecord        = LogRecord{
 		TS:        "2022-06-10 23:43:47 +0000",
 		NodeID:    "71efee2949bd457bac92e3f21215a1bc310fd62f",
@@ -187,7 +187,7 @@ func TestObtainErrors(t *testing.T) {
 
 func TestQueryLogs(t *testing.T) {
 	t.Run("can query hg command for logs", func(t *testing.T) {
-		// repo := filepath.Clean("../../testdata/test_repo2")
+		// repo := filepath.Clean("./testdata/test_repo2")
 		repo := testRepo
 		proc := Proc{}
 		want := testRepoLog
