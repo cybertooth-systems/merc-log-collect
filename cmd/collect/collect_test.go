@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -51,6 +53,13 @@ var (
 		GraphNode: "@",
 		RepoPath:  testRepo,
 	}
+	testErrorRepo = "/stub/repo_error"
+	errTest       = fmt.Errorf("simulated error in repo '/stub/repo_abc123'")
+	testErrEvent  = ErrorEvent{
+		TS:   "2022-06-13 03:33:33 +0000", // NOTE: will not match time.Now()
+		Err:  errTest,
+		Path: testErrorRepo,
+	}
 )
 
 func makeSrvcMocks() (mockObt, mockPer) {
@@ -71,7 +80,14 @@ func (m mockPer) Persist(res Results) error {
 type mockLogQry struct{}
 
 func (m mockLogQry) QueryLogs(repo string) (string, error) {
-	return testRepoLog, nil
+	switch {
+	case strings.HasPrefix(repo, testRepo):
+		return testRepoLog, nil
+	case strings.HasPrefix(repo, testErrorRepo):
+		return "", errTest
+	default:
+		return "", nil
+	}
 }
 
 func TestNewCollSrvc(t *testing.T) {
@@ -116,7 +132,7 @@ func TestNewDataReader(t *testing.T) {
 	})
 }
 
-func TestObtain(t *testing.T) {
+func TestObtainLogs(t *testing.T) {
 	t.Run("can obtain logs", func(t *testing.T) {
 		mq := mockLogQry{}
 		dr := DataReader{mq}
@@ -129,6 +145,7 @@ func TestObtain(t *testing.T) {
 
 		assert(t, err, nil)
 		assert(t, len(got.LogRecs), 1)
+		assert(t, len(got.ErrEvents), 0)
 		gr := got.LogRecs[0]
 		wr := want.LogRecs[0]
 		assert(t, gr.TS, wr.TS)
@@ -142,6 +159,29 @@ func TestObtain(t *testing.T) {
 		assert(t, gr.Files, wr.Files)
 		assert(t, gr.GraphNode, wr.GraphNode)
 		assert(t, gr.RepoPath, wr.RepoPath)
+	})
+}
+
+func TestObtainErrors(t *testing.T) {
+	t.Run("can obtain errors", func(t *testing.T) {
+		mq := mockLogQry{}
+		dr := DataReader{mq}
+		want := Results{
+			ErrEvents: []ErrorEvent{testErrEvent},
+		}
+
+		// SUT
+		got, err := dr.Obtain(testErrorRepo)
+
+		assert(t, err, nil)
+		assert(t, len(got.LogRecs), 0)
+		gr := got.ErrEvents[0]
+		wr := want.ErrEvents[0]
+		if gr.TS == "" { // minimal check since value is based on time.Now()
+			t.Errorf("got empty timestamp")
+		}
+		assert(t, gr.Err, wr.Err)
+		assert(t, gr.Path, wr.Path)
 	})
 }
 
@@ -180,7 +220,7 @@ func TestNewStore(t *testing.T) {
 	})
 }
 
-func TestPersist(t *testing.T) {
+func TestPersistLogs(t *testing.T) {
 	t.Run("can persist logs", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
@@ -191,6 +231,47 @@ func TestPersist(t *testing.T) {
 		st := NewStore(db)
 		res := Results{
 			LogRecs: []LogRecord{testLogRecord},
+		}
+
+		var expectCommit bool
+		mock.ExpectBegin()
+		if len(res.LogRecs) > 0 {
+			expectCommit = true
+			mock.ExpectPrepare(`INSERT INTO logs`)
+			mock.ExpectExec(`INSERT INTO logs`).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+		}
+		if len(res.ErrEvents) > 0 {
+			expectCommit = true
+			mock.ExpectPrepare(`INSERT INTO errors`)
+			mock.ExpectExec(`INSERT INTO errors`).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+		}
+		if expectCommit {
+			mock.ExpectCommit()
+		}
+
+		// SUT
+		err = st.Persist(res)
+
+		assert(t, err, nil)
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("not all sqlmock expecations were met: %v", err)
+		}
+	})
+}
+
+func TestPersistErrors(t *testing.T) {
+	t.Run("can persist errors", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("unexepcted setup error: %v", err)
+		}
+		defer db.Close()
+
+		st := NewStore(db)
+		res := Results{
+			ErrEvents: []ErrorEvent{testErrEvent},
 		}
 
 		var expectCommit bool

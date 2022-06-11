@@ -232,7 +232,8 @@ func (st *Store) Persist(res Results) error {
 			)
 		}
 		rSQL := fmt.Sprintf(
-			`INSERT INTO logs VALUES %s`,
+			`INSERT INTO logs (ts, node_id, rev_id, parent_ids, author, tags, branch, diffstat, files, graph_node, repo_path)
+			VALUES %s`,
 			strings.Join(rv, ", "),
 		)
 		fmt.Printf("!!! rSQL: %#v\n", rSQL)
@@ -250,16 +251,18 @@ func (st *Store) Persist(res Results) error {
 	if len(res.ErrEvents) > 0 {
 		var ev []string
 		for _, e := range res.ErrEvents {
+			// normalize for sql strings
+			eStr := strings.ReplaceAll(e.Err.Error(), "'", "\"")
 			ev = append(
 				ev,
 				fmt.Sprintf(
 					"('%s','%s','%s')",
-					e.TS, e.Err, e.Path,
+					e.TS, eStr, e.Path,
 				),
 			)
 		}
 		eSQL := fmt.Sprintf(
-			`INSERT INTO errors VALUES %s`,
+			`INSERT INTO errs (ts, err, repo_path) VALUES %s`,
 			strings.Join(ev, ", "),
 		)
 		fmt.Printf("!!! eSQL: %#v\n", eSQL)
