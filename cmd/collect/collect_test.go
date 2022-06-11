@@ -60,7 +60,7 @@ func makeSrvcMocks() (mockObt, mockPer) {
 type mockObt struct{}
 type mockPer struct{}
 
-func (m mockObt) Obtain() (Results, error) {
+func (m mockObt) Obtain(r string) (Results, error) {
 	return Results{}, nil
 }
 
@@ -94,9 +94,10 @@ func TestCollectLogs(t *testing.T) {
 	t.Run("can collect logs", func(t *testing.T) {
 		o, p := makeSrvcMocks()
 		cs := NewCollSrvc(o, p)
+		rl := RepoList{testRepoLog}
 
 		// SUT
-		err := cs.CollectLogs()
+		err := cs.CollectLogs(rl)
 
 		assert(t, err, nil)
 	})
@@ -105,13 +106,13 @@ func TestCollectLogs(t *testing.T) {
 func TestObtain(t *testing.T) {
 	t.Run("can obtain logs", func(t *testing.T) {
 		mq := mockLogQry{}
-		dr := DataReader{RepoPath: testRepo, LogQueryer: mq}
+		dr := DataReader{mq}
 		want := Results{
 			LogRecs: []LogRecord{testLogRecord},
 		}
 
 		// SUT
-		got, err := dr.Obtain()
+		got, err := dr.Obtain(testRepo)
 
 		assert(t, err, nil)
 		assert(t, len(got.LogRecs), 1)

@@ -56,8 +56,10 @@ type CollSrvc struct {
 	Persister
 }
 
+type RepoList []string
+
 type Obtainer interface {
-	Obtain() (Results, error)
+	Obtain(string) (Results, error)
 }
 
 type Persister interface {
@@ -68,14 +70,16 @@ func NewCollSrvc(o Obtainer, p Persister) CollSrvc {
 	return CollSrvc{o, p}
 }
 
-func (cs CollSrvc) CollectLogs() error {
-	res, err := cs.Obtain()
-	if err != nil {
-		return err
-	}
+func (cs CollSrvc) CollectLogs(rl RepoList) error {
+	for _, r := range rl {
+		res, err := cs.Obtain(r)
+		if err != nil {
+			return err
+		}
 
-	if err := cs.Persist(res); err != nil {
-		return err
+		if err := cs.Persist(res); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -83,7 +87,6 @@ func (cs CollSrvc) CollectLogs() error {
 //// Adapt data from query process
 
 type DataReader struct {
-	RepoPath string
 	LogQueryer
 }
 
@@ -91,14 +94,14 @@ type LogQueryer interface {
 	QueryLogs(string) (string, error)
 }
 
-func (dr DataReader) Obtain() (Results, error) {
+func (dr DataReader) Obtain(repo string) (Results, error) {
 	res := Results{LogRecs: []LogRecord{}, ErrEvents: []ErrorEvent{}}
-	str, err := dr.QueryLogs(dr.RepoPath)
+	str, err := dr.QueryLogs(repo)
 	if err != nil {
 		e := ErrorEvent{
 			TS:   time.Now().String(),
 			Err:  err,
-			Path: dr.RepoPath,
+			Path: repo,
 		}
 		res.ErrEvents = append(res.ErrEvents, e)
 	}
@@ -116,7 +119,7 @@ func (dr DataReader) Obtain() (Results, error) {
 				e := ErrorEvent{
 					TS:   time.Now().String(),
 					Err:  err,
-					Path: dr.RepoPath,
+					Path: repo,
 				}
 				res.ErrEvents = append(res.ErrEvents, e)
 			}
@@ -133,7 +136,7 @@ func (dr DataReader) Obtain() (Results, error) {
 					DiffStat:  cres[0][7],
 					Files:     cres[0][8],
 					GraphNode: cres[0][9],
-					RepoPath:  dr.RepoPath,
+					RepoPath:  repo,
 				}
 				fmt.Printf("!!! r: %#v\n", r)
 				res.LogRecs = append(res.LogRecs, r)
