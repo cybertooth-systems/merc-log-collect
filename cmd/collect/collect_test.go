@@ -103,6 +103,19 @@ func TestCollectLogs(t *testing.T) {
 	})
 }
 
+func TestNewDataReader(t *testing.T) {
+	t.Run("can init new collection service", func(t *testing.T) {
+		lq := mockLogQry{}
+
+		// SUT
+		got := NewDataReader(lq)
+
+		if got.LogQueryer == nil {
+			t.Errorf("got nil, want new collection service persister")
+		}
+	})
+}
+
 func TestObtain(t *testing.T) {
 	t.Run("can obtain logs", func(t *testing.T) {
 		mq := mockLogQry{}

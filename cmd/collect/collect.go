@@ -90,6 +90,10 @@ type DataReader struct {
 	LogQueryer
 }
 
+func NewDataReader(lq LogQueryer) DataReader {
+	return DataReader{lq}
+}
+
 type LogQueryer interface {
 	QueryLogs(string) (string, error)
 }
