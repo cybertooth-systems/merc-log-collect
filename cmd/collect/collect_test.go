@@ -149,13 +149,32 @@ func TestQueryLogs(t *testing.T) {
 	})
 }
 
+func TestNewStore(t *testing.T) {
+	t.Run("can init new collection service", func(t *testing.T) {
+		db, _, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("unexepcted setup error: %v", err)
+		}
+		defer db.Close()
+
+		// SUT
+		got := NewStore(db)
+
+		if got.Lock == nil {
+			t.Errorf("got nil, want new store lock")
+		}
+	})
+}
+
 func TestPersist(t *testing.T) {
 	t.Run("can persist logs", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("unexepcted setup error: %v", err)
 		}
-		st := Store{DB: db}
+		defer db.Close()
+
+		st := NewStore(db)
 		res := Results{
 			LogRecs: []LogRecord{testLogRecord},
 		}

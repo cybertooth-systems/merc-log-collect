@@ -178,10 +178,23 @@ func (p Proc) QueryLogs(repo string) (string, error) {
 //// Adapt data to persistent storage
 
 type Store struct {
-	DB *sql.DB
+	DB   *sql.DB
+	Lock chan struct{}
 }
 
-func (st Store) Persist(res Results) error {
+func NewStore(db *sql.DB) *Store {
+	return &Store{
+		DB:   db,
+		Lock: make(chan struct{}, 1),
+	}
+}
+
+func (st *Store) Persist(res Results) error {
+	st.Lock <- struct{}{}
+	defer func() {
+		<-st.Lock
+	}()
+
 	tx, err := st.DB.Begin()
 	if err != nil {
 		return err
