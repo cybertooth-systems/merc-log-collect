@@ -3,17 +3,68 @@ package main
 import (
 	"database/sql"
 	"encoding/csv"
+	"flag"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	// repos := flag.String("R", "", "parent directory containing repos in separate child directories")
-	// db := flag.String("d", "", "file path for SQLite database file of the results")
+	repos := flag.String("R", "", "parent directory containing repos in separate child directories")
+	dbFile := flag.String("d", "", "file path for SQLite database file of the results")
 	// n := flag.Int("n", 1, "number of child directories to process in parallel (only works when -R is used)")
-	// flag.Parse()
+	flag.Parse()
+
+	fmt.Printf("!!! using dbFile: %#v\n", *dbFile)
+	db, err := sql.Open("sqlite3", *dbFile)
+	if err != nil {
+		panic(fmt.Sprintf("fatal database open error: %v", err))
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		panic(fmt.Sprintf("fatal database txn begin error: %v", err))
+	}
+	defer tx.Rollback()
+	sqlB, err := ioutil.ReadFile("./db-migration.sql")
+	if err != nil {
+		panic(err)
+	}
+	if _, err := tx.Exec(string(sqlB)); err != nil {
+		panic(err)
+	}
+	if err := tx.Commit(); err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	store := NewStore(db)
+	drdr := NewDataReader(NewProc())
+
+	cs := NewCollSrvc(drdr, store)
+
+	fmt.Printf("!!! using repos dir: %#v\n", *repos)
+	dir, err := os.ReadDir(filepath.Clean(*repos))
+	if err != nil {
+		panic(fmt.Sprintf("fatal repo directory read error: %v", err))
+	}
+
+	rl := RepoList{}
+	for _, r := range dir {
+		if r.IsDir() {
+			path := filepath.Join(filepath.Clean(*repos), r.Name())
+			rl = append(rl, path)
+		}
+	}
+
+	if err := cs.CollectLogs(rl); err != nil {
+		panic(fmt.Sprintf("fatal error collecting logs: %v", err))
+	}
 }
 
 type Results struct {
@@ -72,6 +123,7 @@ func NewCollSrvc(o Obtainer, p Persister) CollSrvc {
 
 func (cs CollSrvc) CollectLogs(rl RepoList) error {
 	for _, r := range rl {
+		fmt.Printf("!!! processing repo: %#v\n", r)
 		res, err := cs.Obtain(r)
 		if err != nil {
 			return err
@@ -147,16 +199,16 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 			}
 		}
 	}
+	fmt.Printf("!!! Results: %#v\n", res)
 	return res, nil
 }
 
 //// Access Mercurial process infrastructure
 
-type Proc struct {
-	Cmd    exec.Cmd
-	Path   string
-	StdErr string
-	StdOut string
+type Proc struct{}
+
+func NewProc() Proc {
+	return Proc{}
 }
 
 func (p Proc) QueryLogs(repo string) (string, error) {
@@ -201,6 +253,8 @@ func (st *Store) Persist(res Results) error {
 	defer func() {
 		<-st.Lock
 	}()
+
+	fmt.Printf("!!! persisting results: %#v\n", res)
 
 	tx, err := st.DB.Begin()
 	if err != nil {

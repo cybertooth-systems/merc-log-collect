@@ -243,8 +243,8 @@ func TestPersistLogs(t *testing.T) {
 		}
 		if len(res.ErrEvents) > 0 {
 			expectCommit = true
-			mock.ExpectPrepare(`INSERT INTO errors`)
-			mock.ExpectExec(`INSERT INTO errors`).
+			mock.ExpectPrepare(`INSERT INTO errs`)
+			mock.ExpectExec(`INSERT INTO errs`).
 				WillReturnResult(sqlmock.NewResult(1, 1))
 		}
 		if expectCommit {
@@ -284,8 +284,8 @@ func TestPersistErrors(t *testing.T) {
 		}
 		if len(res.ErrEvents) > 0 {
 			expectCommit = true
-			mock.ExpectPrepare(`INSERT INTO errors`)
-			mock.ExpectExec(`INSERT INTO errors`).
+			mock.ExpectPrepare(`INSERT INTO errs`)
+			mock.ExpectExec(`INSERT INTO errs`).
 				WillReturnResult(sqlmock.NewResult(1, 1))
 		}
 		if expectCommit {
