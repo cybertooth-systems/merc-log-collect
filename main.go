@@ -16,9 +16,13 @@ import (
 )
 
 func main() {
-	repos := flag.String("R", "", "parent directory containing repos in separate child directories")
-	dbFile := flag.String("d", "", "file path for SQLite database file of the results")
-	// n := flag.Int("n", 1, "number of child directories to process in parallel (only works when -R is used)")
+	var (
+		repos  = flag.String("R", "", "parent directory containing repos in separate child directories (if set, will ignore -r)")
+		repo   = flag.String("r", "", "a single repo directory (will be ingored if -R is set)")
+		dbFile = flag.String("d", "", "file path for SQLite database file of the results")
+		n      = flag.Int("n", 1, "parallel workers to process repo directories (only works when -R is used)")
+	)
+
 	flag.Parse()
 
 	fmt.Printf("!!! using dbFile: %#v\n", *dbFile)
@@ -47,19 +51,29 @@ func main() {
 	drdr := NewDataReader(NewProc())
 
 	cs := NewCollSrvc(drdr, store)
-
-	fmt.Printf("!!! using repos dir: %#v\n", *repos)
-	dir, err := os.ReadDir(filepath.Clean(*repos))
-	if err != nil {
-		panic(fmt.Sprintf("fatal repo directory read error: %v", err))
-	}
+	cs.WorkerCount = *n
 
 	rl := RepoList{}
-	for _, r := range dir {
-		if r.IsDir() {
-			path := filepath.Join(filepath.Clean(*repos), r.Name())
-			rl = append(rl, path)
+	switch {
+	case repos != nil:
+		fmt.Printf("!!! using repos dir: %#v\n", *repos)
+		dir, err := os.ReadDir(filepath.Clean(*repos))
+		if err != nil {
+			panic(fmt.Sprintf("fatal repo directory read error: %v", err))
 		}
+
+		for _, r := range dir {
+			if r.IsDir() {
+				path := filepath.Join(filepath.Clean(*repos), r.Name())
+				rl = append(rl, path)
+			}
+		}
+	case repo != nil:
+		fmt.Printf("!!! repo dir: %#v\n", *repo)
+
+		rl = RepoList{*repo}
+	default:
+		panic("no repos specified, aborting")
 	}
 
 	if err := cs.CollectLogs(rl); err != nil {
@@ -105,7 +119,10 @@ type ErrorEvent struct {
 type CollSrvc struct {
 	Obtainer
 	Persister
+	WorkerCount int
 }
+
+const defWorkers int = 1
 
 type RepoList []string
 
@@ -118,7 +135,7 @@ type Persister interface {
 }
 
 func NewCollSrvc(o Obtainer, p Persister) CollSrvc {
-	return CollSrvc{o, p}
+	return CollSrvc{o, p, defWorkers}
 }
 
 func (cs CollSrvc) CollectLogs(rl RepoList) error {
@@ -230,6 +247,8 @@ func (p Proc) QueryLogs(repo string) (string, error) {
 	if err := cmd.Wait(); err != nil {
 		return "", fmt.Errorf("%w - %v", err, errB.String())
 	}
+
+	fmt.Printf("!!! Total captured string bytes: %v\n", outB.Len())
 
 	return outB.String(), nil
 }

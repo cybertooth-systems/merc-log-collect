@@ -103,6 +103,7 @@ func TestNewCollSrvc(t *testing.T) {
 		if got.Persister == nil {
 			t.Errorf("got nil, want new collection service persister")
 		}
+		assert(t, got.WorkerCount, defWorkers)
 	})
 }
 
