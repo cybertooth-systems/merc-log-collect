@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -50,12 +51,11 @@ func main() {
 	store := NewStore(db)
 	drdr := NewDataReader(NewProc())
 
-	cs := NewCollSrvc(drdr, store)
-	cs.WorkerCount = *n
-
 	rl := RepoList{}
+	var jobs int
 	switch {
-	case repos != nil:
+	case *repos != "":
+		jobs = *n
 		fmt.Printf("!!! using repos dir: %#v\n", *repos)
 		dir, err := os.ReadDir(filepath.Clean(*repos))
 		if err != nil {
@@ -68,7 +68,8 @@ func main() {
 				rl = append(rl, path)
 			}
 		}
-	case repo != nil:
+	case *repo != "":
+		jobs = 1
 		fmt.Printf("!!! repo dir: %#v\n", *repo)
 
 		rl = RepoList{*repo}
@@ -76,9 +77,10 @@ func main() {
 		panic("no repos specified, aborting")
 	}
 
-	if err := cs.CollectLogs(rl); err != nil {
-		panic(fmt.Sprintf("fatal error collecting logs: %v", err))
-	}
+	cs := NewCollSrvc(drdr, store, jobs)
+
+	cs.CollectLogs(rl)
+	cs.WG.Wait()
 }
 
 type Results struct {
@@ -119,10 +121,9 @@ type ErrorEvent struct {
 type CollSrvc struct {
 	Obtainer
 	Persister
-	WorkerCount int
+	WorkerPool chan struct{}
+	WG         sync.WaitGroup
 }
-
-const defWorkers int = 1
 
 type RepoList []string
 
@@ -134,23 +135,39 @@ type Persister interface {
 	Persist(Results) error
 }
 
-func NewCollSrvc(o Obtainer, p Persister) CollSrvc {
-	return CollSrvc{o, p, defWorkers}
+func NewCollSrvc(o Obtainer, p Persister, n int) *CollSrvc {
+	return &CollSrvc{
+		Obtainer:   o,
+		Persister:  p,
+		WorkerPool: make(chan struct{}, n),
+	}
 }
 
-func (cs CollSrvc) CollectLogs(rl RepoList) error {
+func (cs *CollSrvc) CollectLogs(rl RepoList) {
 	for _, r := range rl {
 		fmt.Printf("!!! processing repo: %#v\n", r)
-		res, err := cs.Obtain(r)
-		if err != nil {
-			return err
-		}
+		cs.WG.Add(1)
+		cs.WorkerPool <- struct{}{}
 
-		if err := cs.Persist(res); err != nil {
-			return err
-		}
+		go func(repo string) {
+			res, err := cs.Obtain(repo)
+			if err != nil {
+				e := ErrorEvent{
+					TS:   time.Now().String(),
+					Err:  err,
+					Path: repo,
+				}
+				res.ErrEvents = append(res.ErrEvents, e)
+			}
+
+			if err := cs.Persist(res); err != nil {
+				panic(fmt.Sprintf("fatal error persisting logs: %v", err))
+			}
+
+			<-cs.WorkerPool
+			cs.WG.Done()
+		}(r)
 	}
-	return nil
 }
 
 //// Adapt data from query process

@@ -95,7 +95,7 @@ func TestNewCollSrvc(t *testing.T) {
 		o, p := makeSrvcMocks()
 
 		// SUT
-		got := NewCollSrvc(o, p)
+		got := NewCollSrvc(o, p, 42)
 
 		if got.Obtainer == nil {
 			t.Errorf("got nil, want new collection service obtainer")
@@ -103,20 +103,20 @@ func TestNewCollSrvc(t *testing.T) {
 		if got.Persister == nil {
 			t.Errorf("got nil, want new collection service persister")
 		}
-		assert(t, got.WorkerCount, defWorkers)
+		assert(t, cap(got.WorkerPool), 42)
 	})
 }
 
 func TestCollectLogs(t *testing.T) {
 	t.Run("can collect logs", func(t *testing.T) {
 		o, p := makeSrvcMocks()
-		cs := NewCollSrvc(o, p)
+		cs := NewCollSrvc(o, p, 1)
 		rl := RepoList{testRepoLog}
 
 		// SUT
-		err := cs.CollectLogs(rl)
+		cs.CollectLogs(rl)
 
-		assert(t, err, nil)
+		// NOTE: this test is rather anemic
 	})
 }
 
