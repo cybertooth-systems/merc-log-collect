@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,9 @@ import (
 )
 
 func main() {
+	// handle flags
 	var (
+		debug  = flag.Bool("D", false, "enable debug logging")
 		repos  = flag.String("R", "", "parent directory containing repos in separate child directories (if set, will ignore -r)")
 		repo   = flag.String("r", "", "a single repo directory (will be ingored if -R is set)")
 		dbFile = flag.String("d", "", "file path for SQLite database file of the results")
@@ -26,7 +29,11 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Printf("!!! using dbFile: %#v\n", *dbFile)
+	// setup global logging
+	Log = newAppLog(logConfig{debug: *debug})
+
+	// setup database
+	Log.Infof("using dbFile: %#v", *dbFile)
 	db, err := sql.Open("sqlite3", *dbFile)
 	if err != nil {
 		panic(fmt.Sprintf("fatal database open error: %v", err))
@@ -48,15 +55,17 @@ func main() {
 	}
 	defer db.Close()
 
+	// setup injected dependencies
 	store := NewStore(db)
 	drdr := NewDataReader(NewProc())
 
+	// setup workload
 	rl := RepoList{}
 	var jobs int
 	switch {
 	case *repos != "":
 		jobs = *n
-		fmt.Printf("!!! using repos dir: %#v\n", *repos)
+		Log.Infof("using repos dir: %#v", *repos)
 		dir, err := os.ReadDir(filepath.Clean(*repos))
 		if err != nil {
 			panic(fmt.Sprintf("fatal repo directory read error: %v", err))
@@ -70,17 +79,60 @@ func main() {
 		}
 	case *repo != "":
 		jobs = 1
-		fmt.Printf("!!! repo dir: %#v\n", *repo)
+		Log.Infof("repo dir: %#v", *repo)
 
 		rl = RepoList{*repo}
 	default:
 		panic("no repos specified, aborting")
 	}
 
+	// begin execution
+	start := time.Now()
 	cs := NewCollSrvc(drdr, store, jobs)
-
+	Log.Infof("STARTING. Worker pool size: %v", cap(cs.WorkerPool))
 	cs.CollectLogs(rl)
+
 	cs.WG.Wait()
+	Log.Infof("DONE. Time elapsed: %v", time.Since(start).String())
+}
+
+var Log appLog
+
+func (l appLog) Infof(format string, v ...interface{}) {
+	l.logger.Printf(format, v...)
+}
+
+func (l appLog) Debugf(format string, v ...interface{}) {
+	if l.logger.Prefix() == debugPrefix {
+		l.logger.Printf(format, v...)
+	}
+}
+
+type appLog struct {
+	logger *log.Logger
+}
+
+type logConfig struct {
+	debug bool
+}
+
+const debugPrefix string = "DEBUG "
+
+func newAppLog(lc logConfig) appLog {
+	switch {
+	case lc.debug:
+		return appLog{
+			logger: log.New(
+				os.Stdout, debugPrefix, log.LstdFlags|log.Lmsgprefix,
+			),
+		}
+	default:
+		return appLog{
+			logger: log.New(
+				os.Stdout, "", log.LstdFlags|log.Lmsgprefix,
+			),
+		}
+	}
 }
 
 type Results struct {
@@ -144,14 +196,19 @@ func NewCollSrvc(o Obtainer, p Persister, n int) *CollSrvc {
 }
 
 func (cs *CollSrvc) CollectLogs(rl RepoList) {
+	var cnt int
 	for _, r := range rl {
-		fmt.Printf("!!! processing repo: %#v\n", r)
+		cnt++
+		Log.Infof("processing repo %v of %v: %#v", cnt, len(rl), r)
+		// Log.Debugf("goroutine count: %v", runtime.NumGoroutine())
 		cs.WG.Add(1)
 		cs.WorkerPool <- struct{}{}
+		Log.Infof("pool worker %v started...", cnt)
 
-		go func(repo string) {
+		go func(repo string, count int) {
 			res, err := cs.Obtain(repo)
 			if err != nil {
+				Log.Infof("ERROR EVENT LOGGED - %v", err)
 				e := ErrorEvent{
 					TS:   time.Now().String(),
 					Err:  err,
@@ -166,7 +223,8 @@ func (cs *CollSrvc) CollectLogs(rl RepoList) {
 
 			<-cs.WorkerPool
 			cs.WG.Done()
-		}(r)
+			Log.Infof("completed repo %v", count)
+		}(r, cnt)
 	}
 }
 
@@ -188,6 +246,7 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 	res := Results{LogRecs: []LogRecord{}, ErrEvents: []ErrorEvent{}}
 	str, err := dr.QueryLogs(repo)
 	if err != nil {
+		Log.Infof("ERROR EVENT LOGGED - %v", err)
 		e := ErrorEvent{
 			TS:   time.Now().String(),
 			Err:  err,
@@ -197,15 +256,16 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 	}
 
 	ss := strings.Split(str, "\n")
-	fmt.Printf("!!! ss: %#v\n", ss)
+	Log.Debugf("ss: %#v", ss)
 	for _, rec := range ss {
 		if rec != "\"" {
 			clean := strings.Trim(rec, "'")
-			fmt.Printf("!!! clean: %v\n", clean)
+			Log.Debugf("clean: %v", clean)
 			c := csv.NewReader(strings.NewReader(clean))
 			c.Comma = '\t'
 			cres, err := c.ReadAll()
 			if err != nil {
+				Log.Infof("ERROR EVENT LOGGED - %v", err)
 				e := ErrorEvent{
 					TS:   time.Now().String(),
 					Err:  err,
@@ -214,7 +274,7 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 				res.ErrEvents = append(res.ErrEvents, e)
 			}
 			if len(cres) != 0 {
-				fmt.Printf("!!! cres: %#v\n", cres)
+				Log.Debugf("cres: %#v", cres)
 				r := LogRecord{
 					TS:        cres[0][0],
 					NodeID:    cres[0][1],
@@ -228,12 +288,12 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 					GraphNode: cres[0][9],
 					RepoPath:  repo,
 				}
-				fmt.Printf("!!! r: %#v\n", r)
+				Log.Debugf("r: %#v", r)
 				res.LogRecs = append(res.LogRecs, r)
 			}
 		}
 	}
-	fmt.Printf("!!! Results: %#v\n", res)
+	Log.Debugf("Results: %#v", res)
 	return res, nil
 }
 
@@ -265,7 +325,7 @@ func (p Proc) QueryLogs(repo string) (string, error) {
 		return "", fmt.Errorf("%w - %v", err, errB.String())
 	}
 
-	fmt.Printf("!!! Total captured string bytes: %v\n", outB.Len())
+	Log.Debugf("Total captured string bytes: %v", outB.Len())
 
 	return outB.String(), nil
 }
@@ -290,7 +350,7 @@ func (st *Store) Persist(res Results) error {
 		<-st.Lock
 	}()
 
-	fmt.Printf("!!! persisting results: %#v\n", res)
+	Log.Debugf("persisting results: %#v", res)
 
 	tx, err := st.DB.Begin()
 	if err != nil {
@@ -326,7 +386,7 @@ func (st *Store) Persist(res Results) error {
 			VALUES %s`,
 			strings.Join(rv, ", "),
 		)
-		fmt.Printf("!!! rSQL: %#v\n", rSQL)
+		Log.Debugf("rSQL: %#v", rSQL)
 		rStmt, err := tx.Prepare(rSQL)
 		if err != nil {
 			return err
@@ -355,7 +415,7 @@ func (st *Store) Persist(res Results) error {
 			`INSERT INTO errs (ts, err, repo_path) VALUES %s`,
 			strings.Join(ev, ", "),
 		)
-		fmt.Printf("!!! eSQL: %#v\n", eSQL)
+		Log.Debugf("eSQL: %#v", eSQL)
 		eStmt, err := tx.Prepare(eSQL)
 		if err != nil {
 			return err

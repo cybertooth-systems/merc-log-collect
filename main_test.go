@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -10,6 +12,16 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func TestMain(m *testing.M) {
+
+	debug := flag.Bool("D", false, "enable debug logging")
+	flag.Parse()
+
+	Log = newAppLog(logConfig{debug: *debug})
+
+	os.Exit(m.Run())
+}
 
 func assert(t *testing.T, got, want interface{}) {
 	t.Helper()
@@ -40,8 +52,8 @@ const (
 )
 
 var (
-	testRepo      string = filepath.Clean("./testdata/test_repo")
-	testLogRecord        = LogRecord{
+	testRepo      = filepath.Clean("./testdata/test_repo")
+	testLogRecord = LogRecord{
 		TS:        "2022-06-10 23:43:47 +0000",
 		NodeID:    "71efee2949bd457bac92e3f21215a1bc310fd62f",
 		RevID:     "0",
