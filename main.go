@@ -218,7 +218,7 @@ func (cs *CollSrvc) CollectLogs(rl RepoList) {
 			}
 
 			if err := cs.Persist(res); err != nil {
-				panic(fmt.Sprintf("fatal error persisting logs: %v", err))
+				Log.Infof("ERROR in persisting logs: %v", err)
 			}
 
 			<-cs.WorkerPool
@@ -389,10 +389,10 @@ func (st *Store) Persist(res Results) error {
 		Log.Debugf("rSQL: %#v", rSQL)
 		rStmt, err := tx.Prepare(rSQL)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: preparing SQL: %v", err, rSQL)
 		}
 		if _, err := rStmt.Exec(); err != nil {
-			return err
+			return fmt.Errorf("%w: executing SQL: %v", err, rSQL)
 		}
 
 		toCommit = true
@@ -418,10 +418,10 @@ func (st *Store) Persist(res Results) error {
 		Log.Debugf("eSQL: %#v", eSQL)
 		eStmt, err := tx.Prepare(eSQL)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: preparing SQL: %v", err, eSQL)
 		}
 		if _, err := eStmt.Exec(); err != nil {
-			return err
+			return fmt.Errorf("%w: executing SQL: %v", err, eSQL)
 		}
 
 		toCommit = true
