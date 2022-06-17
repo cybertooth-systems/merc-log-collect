@@ -109,6 +109,7 @@ func (l appLog) Debugf(format string, v ...interface{}) {
 }
 
 type appLog struct {
+	tsfmt  string
 	logger *log.Logger
 }
 
@@ -119,15 +120,18 @@ type logConfig struct {
 const debugPrefix string = "DEBUG "
 
 func newAppLog(lc logConfig) appLog {
+	tf := "2006-01-02 03:04:05 -0700" // match mercurial '{date|isodatesec}'
 	switch {
 	case lc.debug:
 		return appLog{
+			tsfmt: tf,
 			logger: log.New(
 				os.Stdout, debugPrefix, log.LstdFlags|log.Lmsgprefix,
 			),
 		}
 	default:
 		return appLog{
+			tsfmt: tf,
 			logger: log.New(
 				os.Stdout, "", log.LstdFlags|log.Lmsgprefix,
 			),
@@ -210,7 +214,7 @@ func (cs *CollSrvc) CollectLogs(rl RepoList) {
 			if err != nil {
 				Log.Infof("ERROR EVENT LOGGED - %v", err)
 				e := ErrorEvent{
-					TS:   time.Now().String(),
+					TS:   time.Now().Format(Log.tsfmt),
 					Err:  err,
 					Path: repo,
 				}
@@ -248,7 +252,7 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 	if err != nil {
 		Log.Infof("ERROR EVENT LOGGED - %v", err)
 		e := ErrorEvent{
-			TS:   time.Now().String(),
+			TS:   time.Now().Format(Log.tsfmt),
 			Err:  err,
 			Path: repo,
 		}
@@ -267,7 +271,7 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 			if err != nil {
 				Log.Infof("ERROR EVENT LOGGED - %v", err)
 				e := ErrorEvent{
-					TS:   time.Now().String(),
+					TS:   time.Now().Format(Log.tsfmt),
 					Err:  err,
 					Path: repo,
 				}
