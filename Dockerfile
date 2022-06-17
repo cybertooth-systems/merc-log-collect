@@ -1,10 +1,18 @@
-FROM --platform=${BUILDPLATFORM} golang:1.18-stretch AS build
+# syntax = docker/dockerfile:1-experimental
+
+FROM --platform=${BUILDPLATFORM} golang:1.18-bullseye AS base
+
 WORKDIR /src
+COPY go.* db-migration.sql .
+RUN go mod download
+
+FROM base AS build
 ENV CGO_ENABLED=1
-COPY . .
 ARG TARGETOS
 ARG TARGETARCH
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/merc-log-collect .
+RUN --mount=target=. \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/merc-log-collect .
 
 FROM scratch AS bin-unix
 COPY --from=build /out/merc-log-collect /

@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  merc-log-collect:
+    image: merc-log-collect:latest
+    volumes:
+      - ${INPUT}:/input
+      - ${OUTPUT}:/output
+    entrypoint: "/out/merc-log-collect"
+
+# merc-log-collect args should be given to docker-compose as CMD paramters
+#
+# example usage for multiple repos:
+# INPUT=/repos OUTPUT=./ \
+#   docker-compose run merc-log-collect -R /input -d /output/log.db -n 4
+#
+# example usage for single repo:
+# INPUT=/a_repo OUTPUT=./ \
+#   docker-compose run merc-log-collect -r /input -d /output/log.db
