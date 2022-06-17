@@ -22,7 +22,7 @@ func main() {
 	var (
 		debug  = flag.Bool("D", false, "enable debug logging")
 		repos  = flag.String("R", "", "parent directory containing repos in separate child directories (if set, will ignore -r)")
-		repo   = flag.String("r", "", "a single repo directory (will be ingored if -R is set)")
+		repo   = flag.String("r", "", "a single repo directory (will be ignored if -R is set)")
 		dbFile = flag.String("d", "", "file path for SQLite database file of the results")
 		n      = flag.Int("n", 1, "parallel workers to process repo directories (only works when -R is used)")
 	)
@@ -268,8 +268,8 @@ func (dr DataReader) Obtain(repo string) (Results, error) {
 	ss := strings.Split(str, "\n")
 	Log.Debugf("ss: %#v", ss)
 	for _, rec := range ss {
-		if rec != "\"" {
-			clean := strings.Trim(rec, "'")
+		if rec != "\"" { // omit empty record (due to newline)
+			clean := strings.Trim(rec, "'") // record returns with quotes
 			Log.Debugf("clean: %v", clean)
 			c := csv.NewReader(strings.NewReader(clean))
 			c.Comma = '\t'
@@ -399,10 +399,10 @@ func (st *Store) Persist(res Results) error {
 		Log.Debugf("rSQL: %#v", rSQL)
 		rStmt, err := tx.Prepare(rSQL)
 		if err != nil {
-			return fmt.Errorf("%w: preparing SQL: %v", err, rSQL)
+			return fmt.Errorf("%w - preparing SQL: %v", err, rSQL)
 		}
 		if _, err := rStmt.Exec(); err != nil {
-			return fmt.Errorf("%w: executing SQL: %v", err, rSQL)
+			return fmt.Errorf("%w - executing SQL: %v", err, rSQL)
 		}
 
 		toCommit = true
@@ -428,10 +428,10 @@ func (st *Store) Persist(res Results) error {
 		Log.Debugf("eSQL: %#v", eSQL)
 		eStmt, err := tx.Prepare(eSQL)
 		if err != nil {
-			return fmt.Errorf("%w: preparing SQL: %v", err, eSQL)
+			return fmt.Errorf("%w - preparing SQL: %v", err, eSQL)
 		}
 		if _, err := eStmt.Exec(); err != nil {
-			return fmt.Errorf("%w: executing SQL: %v", err, eSQL)
+			return fmt.Errorf("%w - executing SQL: %v", err, eSQL)
 		}
 
 		toCommit = true
