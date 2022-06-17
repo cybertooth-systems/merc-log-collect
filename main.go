@@ -210,6 +210,12 @@ func (cs *CollSrvc) CollectLogs(rl RepoList) {
 		Log.Infof("pool worker %v started...", cnt)
 
 		go func(repo string, count int) {
+			defer func() {
+				if r := recover(); r != nil {
+					Log.Infof("PANIC RECOVERY: %v", r)
+				}
+			}()
+
 			res, err := cs.Obtain(repo)
 			if err != nil {
 				Log.Infof("ERROR EVENT LOGGED - %v", err)
