@@ -25,6 +25,7 @@ func main() {
 		repo   = flag.String("r", "", "a single repo directory (will be ignored if -R is set)")
 		dbFile = flag.String("d", "", "file path for SQLite database file of the results")
 		n      = flag.Int("n", 1, "parallel workers to process repo directories (only works when -R is used)")
+		omit   = flag.String("o", "", "list of repos to omit (only works when -R is used)")
 	)
 
 	flag.Parse()
@@ -66,6 +67,30 @@ func main() {
 	case *repos != "":
 		jobs = *n
 		Log.Infof("using repos dir: %#v", *repos)
+
+		// make a map of omitted repos for quick lookup to omit from repo list
+		oMap := map[string]struct{}{}
+		if *omit != "" {
+			ob, err := ioutil.ReadFile(*omit)
+			if err != nil {
+				panic(fmt.Sprintf("fatal omit file read error: %v", err))
+			}
+			Log.Infof("processing repo omit file: %v", *omit)
+
+			oSplit := strings.Split(string(ob), "\n")
+			for _, o := range oSplit {
+				oStr := strings.TrimSpace(o)
+				if oStr != "" {
+					oMap[oStr] = struct{}{}
+				}
+			}
+			if len(oMap) == 0 {
+				panic(fmt.Sprintf("fatal omit file resulted in nothing: %v", *omit))
+			}
+
+			Log.Infof("count of repos to omit: %v", len(oMap))
+		}
+
 		dir, err := os.ReadDir(filepath.Clean(*repos))
 		if err != nil {
 			panic(fmt.Sprintf("fatal repo directory read error: %v", err))
@@ -73,8 +98,10 @@ func main() {
 
 		for _, r := range dir {
 			if r.IsDir() {
-				path := filepath.Join(filepath.Clean(*repos), r.Name())
-				rl = append(rl, path)
+				if _, omitted := oMap[r.Name()]; !omitted {
+					path := filepath.Join(filepath.Clean(*repos), r.Name())
+					rl = append(rl, path)
+				}
 			}
 		}
 	case *repo != "":
@@ -85,6 +112,8 @@ func main() {
 	default:
 		panic("no repos specified, aborting")
 	}
+
+	Log.Infof("count of repos to be processed: %v", len(rl))
 
 	// begin execution
 	start := time.Now()

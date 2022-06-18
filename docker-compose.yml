@@ -5,13 +5,15 @@ services:
     volumes:
       - ${INPUT}:/input
       - ${OUTPUT}:/output
+      - ${OMIT}:/omit
     entrypoint: "/out/merc-log-collect"
 
 # merc-log-collect args should be given to docker-compose as CMD paramters
 #
 # example usage for multiple repos:
-# INPUT=/repos OUTPUT=./ \
-#   docker-compose run merc-log-collect -R /input -d /output/log.db -n 4
+# INPUT=/repos OUTPUT=./ OMIT=./ \
+#   docker-compose run merc-log-collect \
+#     -R /input -d /output/log.db -n 4 -o /omit/omit.file
 #
 # example usage for single repo:
 # INPUT=/a_repo OUTPUT=./ \
