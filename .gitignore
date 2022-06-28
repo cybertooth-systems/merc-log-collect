@@ -1,3 +1,4 @@
 bin/*
 testdata/*
 !testdata/golden_files
+.Rproj.user
