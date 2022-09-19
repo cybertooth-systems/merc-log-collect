@@ -2,3 +2,5 @@ bin/*
 testdata/*
 !testdata/golden_files
 .Rproj.user
+
+.DS_Store
